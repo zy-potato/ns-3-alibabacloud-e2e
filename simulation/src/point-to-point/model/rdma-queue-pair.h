@@ -19,6 +19,7 @@ public:
 	uint16_t sport, dport;
 	uint64_t m_size, m_init_size, m_tag;
 	uint32_t m_src, m_dest;
+	uint32_t m_cnp_count = 0; // CNPs received by this qp
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq
 	uint16_t m_pg;
 	uint16_t m_ipid;

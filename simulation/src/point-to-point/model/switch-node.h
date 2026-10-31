@@ -57,18 +57,21 @@ public:
 	
 	// for monitor
 	uint64_t last_txBytes[pCnt]; // last sampling of the counter of tx bytes
-	uint64_t last_port_qlen[pCnt]; // last sampling of the port length
+	uint64_t last_qlen[pCnt][qCnt]; // last written length of each queue
 	
 	/**
-	 * outoput format:
-	 * time, sw_id, port_id, q_id, qlen, port_len
+	 * output format:
+	 * time_ns,node,port,queue,qlen_bytes,port_bytes
+	 * one row whenever a queue differs from its last written length
 	 */
 	void PrintSwitchQlen(FILE* qlen_output);
 	/**
-	 * outoput format:
-	 * time, sw_id, port_id, txBytes
+	 * output format:
+	 * time_ns,node,port,bw_gbps
+	 * no row for a sampling interval in which the port sent nothing
 	 */
 	void PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval);
+	void ResetBwBaseline(); // bytes sent before this call are not reported
 };
 
 } /* namespace ns3 */

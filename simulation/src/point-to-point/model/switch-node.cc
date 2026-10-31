@@ -53,8 +53,12 @@ SwitchNode::SwitchNode(){
 		for (uint32_t j = 0; j < pCnt; j++)
 			for (uint32_t k = 0; k < qCnt; k++)
 				m_bytes[i][j][k] = 0;
-	for (uint32_t i = 0; i < pCnt; i++)
+	for (uint32_t i = 0; i < pCnt; i++){
 		m_txBytes[i] = 0;
+		last_txBytes[i] = 0;
+		for (uint32_t j = 0; j < qCnt; j++)
+			last_qlen[i][j] = 0;
+	}
 	for (uint32_t i = 0; i < pCnt; i++)
 		m_lastPktSize[i] = m_lastPktTs[i] = 0;
 	for (uint32_t i = 0; i < pCnt; i++)
@@ -340,8 +344,9 @@ int SwitchNode::log2apprx(int x, int b, int m, int l){
 
 // for monitor
 /**
- * outoput format:
- * time, sw_id, port_id, q_id, qlen, port_len
+ * output format:
+ * time_ns,node,port,queue,qlen_bytes,port_bytes
+ * one row whenever a queue differs from its last written length
 */
 void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 	uint32_t n_dev = this->GetNDevices();
@@ -350,20 +355,20 @@ void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 		for(uint32_t j=0; j < qCnt; ++j){
 			port_len += m_mmu->egress_bytes[i][j];
 		}
-		if(port_len == last_port_qlen[i]){
-			continue;
-		}
 		for(uint32_t j=0; j < qCnt; ++j){
-			fprintf(qlen_output, "%lu, %u, %u, %u, %u, %lu\n", Simulator::Now().GetTimeStep(), m_id, i, j, m_mmu->egress_bytes[i][j], port_len);
-			fflush(qlen_output);
+			if(m_mmu->egress_bytes[i][j] == last_qlen[i][j]){
+				continue;
+			}
+			fprintf(qlen_output, "%lu,%u,%u,%u,%lu,%lu\n", Simulator::Now().GetTimeStep(), m_id, i, j, m_mmu->egress_bytes[i][j], port_len);
+			last_qlen[i][j] = m_mmu->egress_bytes[i][j];
 		}
-		last_port_qlen[i] = port_len;
-	}		
+	}
 }
 
 /**
- * outoput format:
- * time, sw_id, port_id, bandwidth
+ * output format:
+ * time_ns,node,port,bw_gbps
+ * no row for a sampling interval in which the port sent nothing
 */
 void SwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 	uint32_t n_dev = this->GetNDevices();
@@ -373,10 +378,15 @@ void SwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 		}
 		double bw = (m_txBytes[i] - last_txBytes[i]) * 8 * 1e6 / bw_mon_interval; // bit/s
 		bw = bw*1.0 / 1e9; // Gbps
-		fprintf(bw_output, "%lu, %u, %u, %f\n", Simulator::Now().GetTimeStep(), m_id, i, bw);
-		fflush(bw_output);
+		fprintf(bw_output, "%lu,%u,%u,%f\n", Simulator::Now().GetTimeStep(), m_id, i, bw);
 		last_txBytes[i] = m_txBytes[i];
-	}	
+	}
+}
+
+void SwitchNode::ResetBwBaseline(){
+	for(uint32_t i = 0; i < pCnt; ++i){
+		last_txBytes[i] = m_txBytes[i];
+	}
 }
 
 } /* namespace ns3 */

@@ -58,14 +58,13 @@ public:
 
     // for monitor
 	std::vector<uint64_t> tx_bytes; // <port_id, tx_bytes>
-	std::unordered_map<uint64_t, uint32_t> qp_cnp; // key of qp ---> received cnp number
 	std::vector<uint64_t> last_tx_bytes; // last sampling value <port_id, tx_bytes>
-	std::unordered_map<uint64_t, uint32_t> last_qp_cnp; // last sampling value key of qp ---> received cnp number
 	std::unordered_map<uint64_t, uint64_t> last_qp_rate; // last sampling value key of qp ---> sending rate
 	void UpdateTxBytes(uint32_t port_id, uint64_t bytes);
 	void PrintHostBW(FILE* bw_output, uint32_t bw_mon_interval);
+	void ResetBwBaseline(); // bytes sent before this call are not reported
 	void PrintQPRate(FILE* rate_output);
-	void PrintQPCnpNumber(FILE* cnp_output);
+	FILE* m_cnp_output = nullptr; // cnp log: time_ns,src,dst,sport,dport,size_bytes,cnp_total
 
 	// nvls
 	void enable_nvls();

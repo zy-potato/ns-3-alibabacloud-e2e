@@ -290,8 +290,6 @@ void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t si
 	m_nic[nic_idx].qpGrp->AddQp(qp);
 	uint64_t key = GetQpKey(dip.Get(), sport, pg);
 	m_qpMap[key] = qp;
-	qp_cnp[key] = 0;
-	last_qp_cnp[key] = 0;
 	last_qp_rate[key] = 0;
 
 	// set init variables
@@ -322,8 +320,6 @@ void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	// remove qp from the m_qpMap
 	uint64_t key = GetQpKey(qp->dip.Get(), qp->sport, qp->m_pg);
 	m_qpMap.erase(key);
-	qp_cnp.erase(key);
-	last_qp_cnp.erase(key);
 	last_qp_rate.erase(key);
 }
 
@@ -544,8 +540,13 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 
 	// handle cnp
 	if (cnp){
-		uint64_t key = GetQpKey(qp->dip.Get(), qp->sport, qp->m_pg);
-		qp_cnp[key]++; // update for the number of cnp this qp has received
+		// counted on the qp: the ack that completes a qp can carry a CNP, and the qp has left m_qpMap by then
+		qp->m_cnp_count++;
+		if(m_cnp_output != nullptr){
+			// one row per CNP: a sampled counter would lose the CNPs received just before a qp finishes
+			fprintf(m_cnp_output, "%lu,%u,%u,%u,%u,%lu,%u\n", Simulator::Now().GetTimeStep(), qp->m_src, qp->m_dest, qp->sport, qp->dport, qp->m_size, qp->m_cnp_count);
+			fflush(m_cnp_output);
+		}
 		if (m_cc_mode == 1){ // mlx version
 			cnp_received_mlx(qp);
 		} 
@@ -760,7 +761,8 @@ void RdmaHw::UpdateTxBytes(uint32_t port_id, uint64_t bytes){
 }
 /**
  * output format:
- * time, host_id, port_id, bandwidth
+ * time_ns,node,port,bw_gbps
+ * no row for a sampling interval in which the port sent nothing
 */
 void RdmaHw::PrintHostBW(FILE* bw_output, uint32_t bw_mon_interval){
 	for(int i = 0; i < m_nic.size(); ++i){
@@ -769,14 +771,17 @@ void RdmaHw::PrintHostBW(FILE* bw_output, uint32_t bw_mon_interval){
 		}
 		double bw = (tx_bytes[i] - last_tx_bytes[i]) * 8 * 1e6 / (bw_mon_interval); // bit/s
 		bw = bw*1.0 / 1e9; // Gbps
-		fprintf(bw_output, "%lu, %u, %u, %f\n", Simulator::Now().GetTimeStep(), m_node->GetId(), i, bw);
-		fflush(bw_output);
+		fprintf(bw_output, "%lu,%u,%u,%f\n", Simulator::Now().GetTimeStep(), m_node->GetId(), i, bw);
 		last_tx_bytes[i] = tx_bytes[i];
 	}
 }
+void RdmaHw::ResetBwBaseline(){
+	last_tx_bytes = tx_bytes;
+}
 /**
  * output format:
- * time, src, dst, sport, dport, size, rate
+ * time_ns,src,dst,sport,dport,size_bytes,rate_bps
+ * one row whenever a qp's rate differs from its last written rate
 */
 void RdmaHw::PrintQPRate(FILE* rate_output){
 	std::unordered_map<uint64_t, Ptr<RdmaQueuePair>>::iterator it = m_qpMap.begin();
@@ -786,25 +791,8 @@ void RdmaHw::PrintQPRate(FILE* rate_output){
 		if(qp->m_rate.GetBitRate() == last_qp_rate[key]){
 			continue;
 		}
-		fprintf(rate_output, "%lu, %u, %u, %u, %u, %u, %u\n", Simulator::Now().GetTimeStep(), qp->m_src, qp->m_dest, qp->sport, qp->dport, qp->m_size, qp->m_rate.GetBitRate());
-		fflush(rate_output);
+		fprintf(rate_output, "%lu,%u,%u,%u,%u,%lu,%lu\n", Simulator::Now().GetTimeStep(), qp->m_src, qp->m_dest, qp->sport, qp->dport, qp->m_size, qp->m_rate.GetBitRate());
 		last_qp_rate[key] = qp->m_rate.GetBitRate();
-	}
-}
-/**
- * output format:
- * time, src, dst, sport, dport, size, cnp_number
-*/
-void RdmaHw::PrintQPCnpNumber(FILE* cnp_output){
-	std::unordered_map<uint64_t, Ptr<RdmaQueuePair>>::iterator it = m_qpMap.begin();
-	for(; it != m_qpMap.end(); it++){
-		Ptr<RdmaQueuePair> qp = it->second;
-		uint64_t key = it->first;
-		if(qp_cnp[key] != last_qp_cnp[key]){
-			fprintf(cnp_output, "%lu, %u, %u, %u, %u, %u, %u\n", Simulator::Now().GetTimeStep(), qp->m_src, qp->m_dest, qp->sport, qp->dport, qp->m_size, qp_cnp[key]);
-			fflush(cnp_output);
-			last_qp_cnp[key] = qp_cnp[key];
-		}
 	}
 }
 #define PRINT_LOG 0
